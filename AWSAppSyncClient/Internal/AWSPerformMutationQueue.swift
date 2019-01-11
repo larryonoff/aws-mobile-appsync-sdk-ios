@@ -66,6 +66,7 @@ final class AWSPerformMutationQueue {
 
     func add<Mutation: GraphQLMutation>(
         _ mutation: Mutation,
+        mutationPriority: AWSMutationPriority,
         mutationConflictHandler: MutationConflictHandler<Mutation>?,
         mutationResultHandler: OperationResultHandler<Mutation>?) -> Cancellable {
 
@@ -85,6 +86,7 @@ final class AWSPerformMutationQueue {
             mutationResultHandler: mutationResultHandler)
 
         operation.identifier = offlineMutation?.recordIdentitifer
+        operation.queuePriority = mutationPriority.operationQueuePriority
 
         operation.operationCompletionBlock = { [weak self] operation, error in
             guard let identifier = operation.identifier else { return }
@@ -131,6 +133,7 @@ final class AWSPerformMutationQueue {
                     networkClient: networkClient,
                     handlerQueue: handlerQueue,
                     mutation: mutation)
+                operation.queuePriority = mutation.priority?.operationQueuePriority ?? .normal
 
                 operation.operationCompletionBlock = { [weak self] operation, error in
                     let identifier = operation.mutation.recordIdentitifer
