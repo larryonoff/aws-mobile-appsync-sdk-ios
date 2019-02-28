@@ -15,12 +15,6 @@ public typealias OptimisticResponseBlock = (ApolloStore.ReadWriteTransaction?) -
 
 public typealias MutationConflictHandler<Mutation: GraphQLMutation> = (_ serverState: Snapshot?, _ taskCompletionSource: AWSTaskCompletionSource<Mutation>?, _ resultHandler: OperationResultHandler<Mutation>?) -> Void
 
-enum AWSAppSyncGraphQLOperation {
-    case mutation
-    case query
-    case subscription
-}
-
 internal let NoOpOperationString = "No-op"
 
 public struct AWSAppSyncSubscriptionError: Error, LocalizedError {
@@ -97,7 +91,6 @@ public class AWSAppSyncClient {
         self.mutationQueue = AWSPerformMutationQueue(
             appSyncClient: self,
             networkClient: httpTransport!,
-            handlerQueue: .main,
             reachabiltyChangeNotifier: NetworkReachabilityNotifier.shared,
             cacheFileURL: appSyncConfig.cacheConfiguration?.offlineMutations)
 
@@ -215,7 +208,9 @@ public class AWSAppSyncClient {
             mutation,
             mutationPriority: mutationPriority,
             mutationConflictHandler: conflictResolutionBlock,
-            mutationResultHandler: resultHandler)
+            mutationResultHandler: resultHandler,
+            handlerQueue: queue
+        )
     }
 
     internal final class EmptySubscription: GraphQLSubscription {
