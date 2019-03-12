@@ -1,16 +1,7 @@
 //
-// Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License").
-// You may not use this file except in compliance with the License.
-// A copy of the License is located at
-//
-// http://aws.amazon.com/apache2.0
-//
-// or in the "license" file accompanying this file. This file is distributed
-// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-// express or implied. See the License for the specific language governing
-// permissions and limitations under the License.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Licensed under the Amazon Software License
+// http://aws.amazon.com/asl/
 //
 
 import XCTest
@@ -20,11 +11,12 @@ import XCTest
 
 class MutationQueueTests: XCTestCase {
 
-    var databaseURL: URL!
+    var cacheConfiguration: AWSAppSyncCacheConfiguration!
 
     override func setUp() {
         let tempDir = FileManager.default.temporaryDirectory
-        databaseURL = tempDir.appendingPathComponent("MutationQueueTests-\(UUID().uuidString).db")
+        let rootDirectory = tempDir.appendingPathComponent("MutationQueueTests-\(UUID().uuidString)")
+        cacheConfiguration = try! AWSAppSyncCacheConfiguration(withRootDirectory: rootDirectory)
     }
 
     override func tearDown() {
@@ -36,9 +28,9 @@ class MutationQueueTests: XCTestCase {
         let addPost = DefaultTestPostData.defaultCreatePostWithoutFileUsingParametersMutation
 
         let mockHTTPTransport = MockAWSNetworkTransport()
-        mockHTTPTransport.sendOperationHandlerResponseBody = makeAddPostResponseBody(withId: "TestPostID", forMutation: addPost)
+        mockHTTPTransport.sendOperationHandlerResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "TestPostID", for: addPost)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport, withBackingDatabase: true)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: AWSAppSyncCacheConfiguration())
 
         let mutationPerformed = expectation(description: "Post added")
         appSyncClient.perform(mutation: addPost) { result, error in
@@ -53,9 +45,9 @@ class MutationQueueTests: XCTestCase {
         let addPost = DefaultTestPostData.defaultCreatePostWithoutFileUsingParametersMutation
 
         let mockHTTPTransport = MockAWSNetworkTransport()
-        mockHTTPTransport.sendOperationHandlerResponseBody = makeAddPostResponseBody(withId: "TestPostID", forMutation: addPost)
+        mockHTTPTransport.sendOperationHandlerResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "TestPostID", for: addPost)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         let mutationPerformed = expectation(description: "Post added")
         appSyncClient.perform(mutation: addPost) { result, error in
@@ -77,7 +69,7 @@ class MutationQueueTests: XCTestCase {
 
         // First add a response block that delays response, to give the expectations a chance to ensure the second one doesn't
         // proceed until the first is done.
-        let delayedResponseBody = makeAddPostResponseBody(withId: "DelayedTestPostID", forMutation: addPost)
+        let delayedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "DelayedTestPostID", for: addPost)
 
         let delayedMutationInvoked = expectation(description: "Delayed mutation invoked")
         let delayedMutationResponseDispatched = expectation(description: "Delayed mutation response dispatched")
@@ -94,11 +86,11 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(delayedResponseBlock)
 
-        let queuedResponseBody = makeAddPostResponseBody(withId: "QueuedTestPostID", forMutation: addPost)
+        let queuedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "QueuedTestPostID", for: addPost)
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBody)
 
         let appSyncClientReleased = expectation(description: "AppSyncClient was properly released")
-        var appSyncClient: DeinitNotifiableAppSyncClient? = try makeAppSyncClient(using: mockHTTPTransport)
+        var appSyncClient: DeinitNotifiableAppSyncClient? = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
         appSyncClient?.deinitCalled = {
             appSyncClientReleased.fulfill()
         }
@@ -138,7 +130,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBlock)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         appSyncClient.perform(mutation: addPost) { _, _ in }
 
@@ -149,13 +141,13 @@ class MutationQueueTests: XCTestCase {
         let addPost = DefaultTestPostData.defaultCreatePostWithoutFileUsingParametersMutation
 
         let mockHTTPTransport = MockAWSNetworkTransport()
-        mockHTTPTransport.sendOperationHandlerResponseBody = makeAddPostResponseBody(withId: "ErrorPostID", forMutation: addPost)
+        mockHTTPTransport.sendOperationHandlerResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "ErrorPostID", for: addPost)
 
         // Now that we've set up the responses, we'll add an error to be returned each time the "addPost" mutation gets called
         let addPostError: Error = "AddPostError"
         mockHTTPTransport.sendOperationHandlerError = addPostError
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // Allow the result handler for the errored mutation to be invoked multiple times since it is retriable
         let attemptedMutationWithError = expectation(description: "Attempted mutation with error")
@@ -177,13 +169,13 @@ class MutationQueueTests: XCTestCase {
 
         var mutationPerformedExpectations = [XCTestExpectation]()
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // After this block, the mockHTTPTransport will have `numberOfMutationsToPerform` blocks to perform, in sequence,
         // to be invoked on subsequent invocations of `send`
         for i in 0 ..< numberOfMutationsToPerform {
             // Note that our ID is simply the string of the index, to make it easy to inspect & assert during fulfillment
-            let responseBody = makeAddPostResponseBody(withId: "\(i)", forMutation: addPost)
+            let responseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "\(i)", for: addPost)
             mockHTTPTransport.sendOperationResponseQueue.append(responseBody)
             let mutationPerformed = expectation(description: "Post \(i) added")
             mutationPerformedExpectations.append(mutationPerformed)
@@ -220,7 +212,7 @@ class MutationQueueTests: XCTestCase {
 
         // First add a response block that delays response, to give the expectations a chance to ensure the second one doesn't
         // proceed until the first is done.
-        let delayedResponseBody = makeAddPostResponseBody(withId: "DelayedTestPostID", forMutation: addPost)
+        let delayedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "DelayedTestPostID", for: addPost)
 
         var delayedMutationHasNotYetBeenPerformed = true
 
@@ -241,7 +233,7 @@ class MutationQueueTests: XCTestCase {
         mockHTTPTransport.sendOperationResponseQueue.append(delayedResponseBlock)
 
         // Now set up a response block that asserts it wasn't invoked until after the delayed mutation was completed
-        let queuedResponseBody = makeAddPostResponseBody(withId: "QueuedTestPostID", forMutation: addPost)
+        let queuedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "QueuedTestPostID", for: addPost)
         let queuedMutationInvokedPrematurely = expectation(description: "Queued mutation invoked before delayed mutation response was ready")
         queuedMutationInvokedPrematurely.isInverted = true
 
@@ -263,7 +255,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBlock)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // Mutation 1 invokes the delayed response block
         appSyncClient.perform(mutation: addPost) { _, _ in }
@@ -294,7 +286,7 @@ class MutationQueueTests: XCTestCase {
 
         // Now set up a response block that asserts it wasn't invoked until after the network state was changed
         var networkStateHasBeenChanged = false
-        let queuedResponseBody = makeAddPostResponseBody(withId: "QueuedTestPostID", forMutation: addPost)
+        let queuedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "QueuedTestPostID", for: addPost)
         let queuedMutationInvokedPrematurely = expectation(description: "Queued mutation invoked before network status was changed")
         queuedMutationInvokedPrematurely.isInverted = true
 
@@ -316,7 +308,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBlock)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // When this method returns, the mutation will be added to the operation queue, and should be added to the persistent
         // database.
@@ -351,7 +343,7 @@ class MutationQueueTests: XCTestCase {
 
         var networkState = TestNetworkState.initiallyOn
 
-        let delayingResponseBody = makeAddPostResponseBody(withId: "DelayingTestPostID", forMutation: addPost)
+        let delayingResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "DelayingTestPostID", for: addPost)
         let delayingResponseHandlerInvoked = expectation(description: "Delaying response handler invoked")
         let delayingResponseDispatched = expectation(description: "Delaying response dispatched")
 
@@ -367,7 +359,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(delayingResponseBlock)
 
-        let queuedResponseBody = makeAddPostResponseBody(withId: "QueuedTestPostID", forMutation: addPost)
+        let queuedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "QueuedTestPostID", for: addPost)
 
         let queuedMutationShouldNotBeInvokedBeforeNetworkStateHasChanged = expectation(description: "Queued mutation incorrectly invoked before network status was changed")
         queuedMutationShouldNotBeInvokedBeforeNetworkStateHasChanged.isInverted = true
@@ -397,7 +389,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBlock)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // Queue the delaying mutation
         appSyncClient.perform(mutation: addPost) { _, _ in }
@@ -444,7 +436,7 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendDataResponseQueue.append(queuedResponseBlock)
 
-        var appSyncClient: DeinitNotifiableAppSyncClient? = try makeAppSyncClient(using: mockHTTPTransport, withBackingDatabase: true)
+        var appSyncClient: DeinitNotifiableAppSyncClient? = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: AWSAppSyncCacheConfiguration())
 
         let deinitCalled = expectation(description: "AppSyncClient deinitialized")
         appSyncClient?.deinitCalled = {
@@ -460,7 +452,7 @@ class MutationQueueTests: XCTestCase {
         wait(for: [deinitCalled], timeout: 0.5)
 
         reachability.connection = .wifi
-        appSyncClient = try makeAppSyncClient(using: mockHTTPTransport, withBackingDatabase: true)
+        appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: AWSAppSyncCacheConfiguration())
 
         // We now expect send to be invoked, indicating that the queued mutation was read from persistent storage
         wait(for: [sendWasInvoked], timeout: 0.5)
@@ -472,7 +464,7 @@ class MutationQueueTests: XCTestCase {
         let addPost = DefaultTestPostData.defaultCreatePostWithoutFileUsingParametersMutation
         let mockHTTPTransport = MockAWSNetworkTransport()
 
-        let delayedResponseBody = makeAddPostResponseBody(withId: "DelayedTestPostID", forMutation: addPost)
+        let delayedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "DelayedTestPostID", for: addPost)
         let delayedMutationInvoked = expectation(description: "Delayed mutation invoked")
         let delayedMutationResponseDispatched = expectation(description: "Delayed mutation response dispatched")
 
@@ -488,13 +480,13 @@ class MutationQueueTests: XCTestCase {
 
         mockHTTPTransport.sendOperationResponseQueue.append(delayedResponseBlock)
 
-        let cancelledResponseBody = makeAddPostResponseBody(withId: "CancelledTestPostID", forMutation: addPost)
+        let cancelledResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "CancelledTestPostID", for: addPost)
         mockHTTPTransport.sendOperationResponseQueue.append(cancelledResponseBody)
 
-        let queuedResponseBody = makeAddPostResponseBody(withId: "QueuedTestPostID", forMutation: addPost)
+        let queuedResponseBody = UnitTestHelpers.makeAddPostResponseBody(withId: "QueuedTestPostID", for: addPost)
         mockHTTPTransport.sendOperationResponseQueue.append(queuedResponseBody)
 
-        let appSyncClient = try makeAppSyncClient(using: mockHTTPTransport)
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
 
         // Queue mutation that has a delay built in
         appSyncClient.perform(mutation: addPost) { _, _ in }
@@ -519,38 +511,116 @@ class MutationQueueTests: XCTestCase {
         wait(for: [delayedMutationResponseDispatched, cancelledMutationShouldNotBePerformed, queuedMutationShouldBePerformed], timeout: 1)
     }
 
+    func testMutationWithoutParametersWithoutBackingDatabase() throws {
+        let mutationWithoutParameters = TestMutationWithoutParametersMutation()
+        let mockHTTPTransport = MockAWSNetworkTransport()
+        mockHTTPTransport.sendOperationHandlerResponseBody = makeTestMutationWithoutParametersResponseBody(withValue: true)
+
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: nil)
+
+        let mutationWasPerformed = expectation(description: "Mutation without parameters was performed")
+        appSyncClient.perform(mutation: mutationWithoutParameters) { response, error in
+            defer {
+                mutationWasPerformed.fulfill()
+            }
+
+            guard error == nil else {
+                XCTFail("Error is not nil: \(error.debugDescription)")
+                return
+            }
+
+            guard let response = response, let resultValue = response.data?.testMutationWithoutParameters else {
+                XCTFail("Response unexpectedly nil")
+                return
+            }
+
+            XCTAssert(resultValue)
+        }
+
+        wait(for: [mutationWasPerformed], timeout: 1.0)
+    }
+
+    func testMutationWithoutParametersWithBackingDatabase() throws {
+        let mutationWithoutParameters = TestMutationWithoutParametersMutation()
+        let mockHTTPTransport = MockAWSNetworkTransport()
+        mockHTTPTransport.sendOperationHandlerResponseBody = makeTestMutationWithoutParametersResponseBody(withValue: true)
+
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport, cacheConfiguration: AWSAppSyncCacheConfiguration())
+
+        let mutationWasPerformed = expectation(description: "Mutation without parameters was performed")
+        appSyncClient.perform(mutation: mutationWithoutParameters) { response, error in
+            defer {
+                mutationWasPerformed.fulfill()
+            }
+
+            guard error == nil else {
+                XCTFail("Error is not nil: \(error.debugDescription)")
+                return
+            }
+
+            guard let response = response, let resultValue = response.data?.testMutationWithoutParameters else {
+                XCTFail("Response unexpectedly nil")
+                return
+            }
+
+            XCTAssert(resultValue)
+        }
+
+        wait(for: [mutationWasPerformed], timeout: 1.0)
+    }
+
+    func testResultHandlerIsInvokedOnSpecifiedQueueWithBackingDatabase() throws {
+        let queue = DispatchQueue(label: "Mutation result handler queue")
+
+        let key = DispatchSpecificKey<Void>()
+        queue.setSpecific(key: key, value: ())
+
+        let mutationWithoutParameters = TestMutationWithoutParametersMutation()
+        let mockHTTPTransport = MockAWSNetworkTransport()
+        mockHTTPTransport.sendOperationHandlerResponseBody = makeTestMutationWithoutParametersResponseBody(withValue: true)
+
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport,
+                                                                  cacheConfiguration: AWSAppSyncCacheConfiguration())
+
+        let mutationWasPerformed = expectation(description: "Mutation without parameters was performed")
+        appSyncClient.perform(mutation: mutationWithoutParameters, queue: queue) { response, error in
+            defer {
+                mutationWasPerformed.fulfill()
+            }
+            XCTAssertNotNil(DispatchQueue.getSpecific(key: key))
+        }
+
+        wait(for: [mutationWasPerformed], timeout: 1.0)
+    }
+
+    func testResultHandlerIsInvokedOnSpecifiedQueueWithoutBackingDatabase() throws {
+        let queue = DispatchQueue(label: "Mutation result handler queue")
+
+        let key = DispatchSpecificKey<Void>()
+        queue.setSpecific(key: key, value: ())
+
+        let mutationWithoutParameters = TestMutationWithoutParametersMutation()
+        let mockHTTPTransport = MockAWSNetworkTransport()
+        mockHTTPTransport.sendOperationHandlerResponseBody = makeTestMutationWithoutParametersResponseBody(withValue: true)
+
+        let appSyncClient = try UnitTestHelpers.makeAppSyncClient(using: mockHTTPTransport,
+                                                                  cacheConfiguration: nil)
+
+        let mutationWasPerformed = expectation(description: "Mutation without parameters was performed")
+        appSyncClient.perform(mutation: mutationWithoutParameters, queue: queue) { response, error in
+            defer {
+                mutationWasPerformed.fulfill()
+            }
+            XCTAssertNotNil(DispatchQueue.getSpecific(key: key))
+        }
+
+        wait(for: [mutationWasPerformed], timeout: 1.0)
+    }
+
     // MARK: - Utility methods
 
-    func makeAddPostResponseBody(withId id: GraphQLID,
-                                 forMutation mutation: CreatePostWithoutFileUsingParametersMutation) -> JSONObject {
-        let createdDateMilliseconds = Date().timeIntervalSince1970 * 1000
-
-        let response = CreatePostWithoutFileUsingParametersMutation.Data.CreatePostWithoutFileUsingParameter(
-            id: id,
-            author: mutation.author,
-            title: mutation.title,
-            content: mutation.content,
-            url: mutation.url,
-            ups: mutation.ups ?? 0,
-            downs: mutation.downs ?? 0,
-            file: nil,
-            createdDate: String(describing: Int(createdDateMilliseconds)),
-            awsDs: nil)
-
-        return ["data": ["createPostWithoutFileUsingParameters": response.jsonObject]]
+    func makeTestMutationWithoutParametersResponseBody(withValue value: Bool) -> JSONObject {
+        return ["data": ["testMutationWithoutParameters": value]]
     }
 
-    func makeAppSyncClient(using httpTransport: AWSNetworkTransport,
-                           withBackingDatabase useBackingDatabase: Bool = false) throws -> DeinitNotifiableAppSyncClient {
-        let databaseURL = useBackingDatabase ? self.databaseURL : nil
-        let helper = try AppSyncClientTestHelper(
-            with: .apiKey,
-            testConfiguration: AppSyncClientTestConfiguration.UnitTestingConfiguration,
-            databaseURL: databaseURL,
-            httpTransport: httpTransport,
-            reachabilityFactory: MockReachabilityProvidingFactory.self
-        )
-
-        return helper.appSyncClient
-    }
 }

@@ -1,40 +1,36 @@
 //
-// Copyright 2010-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License").
-// You may not use this file except in compliance with the License.
-// A copy of the License is located at
-//
-// http://aws.amazon.com/apache2.0
-//
-// or in the "license" file accompanying this file. This file is distributed
-// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-// express or implied. See the License for the specific language governing
-// permissions and limitations under the License.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Licensed under the Amazon Software License
+// http://aws.amazon.com/asl/
 //
 
 import Foundation
 @testable import AWSAppSync
 
-class MockSubscriptionWatcher: MQTTSubscriptionWatcher {
-    func connectedCallbackDelegate() {
-    }
+class MockSubscriptionWatcher: MQTTSubscriptionWatcher, CustomStringConvertible {
 
     let identifier: Int
     let topics: [String]
     let messageCallbackBlock: ((Data) -> Void)?
     let disconnectCallbackBlock: ((Error) -> Void)?
     let deallocBlock: ((MQTTSubscriptionWatcher) -> Void)?
+    let statusChangeCallbackBlock: ((AWSIoTMQTTStatus) -> Void)?
+    let subscriptionAcknowledgementCallbackBlock: (() -> Void)?
 
     init(topics: [String],
          deallocBlock:((MQTTSubscriptionWatcher) -> Void)? = nil,
          messageCallbackBlock:((Data) -> Void)? = nil,
-         disconnectCallbackBlock:((Error) -> Void)? = nil) {
+         disconnectCallbackBlock:((Error) -> Void)? = nil,
+         statusChangeCallbackBlock: ((AWSIoTMQTTStatus) -> Void)? = nil,
+         subscriptionAcknowledgementCallbackBlock: (() -> Void)? = nil
+        ) {
         self.identifier = NSUUID().hash
         self.topics = topics
         self.deallocBlock = deallocBlock
         self.messageCallbackBlock = messageCallbackBlock
         self.disconnectCallbackBlock = disconnectCallbackBlock
+        self.statusChangeCallbackBlock = statusChangeCallbackBlock
+        self.subscriptionAcknowledgementCallbackBlock = subscriptionAcknowledgementCallbackBlock
     }
 
     deinit {
@@ -44,13 +40,32 @@ class MockSubscriptionWatcher: MQTTSubscriptionWatcher {
     func getIdentifier() -> Int {
         return identifier
     }
+
     func getTopics() -> [String] {
         return topics
     }
+
     func messageCallbackDelegate(data: Data) {
         messageCallbackBlock?(data)
     }
+
     func disconnectCallbackDelegate(error: Error) {
         disconnectCallbackBlock?(error)
+    }
+
+    func statusChangeDelegate(status: AWSIoTMQTTStatus) {
+        statusChangeCallbackBlock?(status)
+    }
+
+    func subscriptionAcknowledgementDelegate() {
+        subscriptionAcknowledgementCallbackBlock?()
+    }
+
+    @available(*, deprecated, message: "This will be removed when we remove connectedCallbackDelegate from MQTTSubscriptionWatcher")
+    func connectedCallbackDelegate() {
+    }
+
+    var description: String {
+        return "\(type(of: self)): \(getIdentifier())"
     }
 }

@@ -2,15 +2,218 @@
 
 The AWS AppSync SDK for iOS enables you to access your AWS AppSync backend and perform operations like `Queries`, `Mutations` and `Subscriptions`. The SDK also includes support for offline operations.
 
+## 2.10.3
+
+### New Features
+
+- The AppSyncClient's `subscribe` method now accepts an optional `statusChangeHandler`. If provided, then the `AWSAppSyncSubscriptionWatcher`
+  returned by the `subscribe` method will invoke that method when it is notified of changes to the state of the underlying MQTT client.
+  `AWSAppSyncSubscriptionWatcherStatus` for a description of the statuses and their progression. Thanks @fans3210, @shannon-hager-skookum, and @achager for
+  contributing your thoughts to the original request ([Issue #42](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/42)) and to
+  @MarioBajr for contributing the original implementation on [PR #75](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/pull/75).
+- Added a `queuedMutationCount` property to AppSyncClient ([Issue #192](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/192))
+
+### Bug fixes
+
+- Fixed incorrect AWSCore dependency version in podspec ([Issue #190](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/190))
+- Fixed data races in AppSyncMQTTClient that were causing crashes ([Issue #184](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/184))
+
+### Misc. Updates
+
+- Added `AWSAppSyncClientLogFormatter` utility class. Developers who want to use it can add it to the appropriate logger. For example, a configuration like:
+    ```swift
+    AWSDDLog.sharedInstance.logLevel = .verbose
+    AWSDDTTYLogger.sharedInstance.logFormatter = AWSAppSyncClientLogFormatter()
+    AWSDDLog.sharedInstance.add(AWSDDTTYLogger.sharedInstance)
+    ```
+  would output log messages like:
+    ```
+    2019-03-04 07:21:32.131-0800 [I AWSAppSyncClient.init(appSyncConfig:reachabilityFactory:), L75] Initializing AppSyncClient
+    2019-03-04 07:21:32.135-0800 [V AWSPerformMutationQueue.init(appSyncClient:networkClient:reachabiltyChangeNotifier:cacheFileURL:), L24] Initializing AWSPerformMutationQueue
+    2019-03-04 07:21:32.135-0800 [V AWSPerformMutationQueue.resume(), L95] Resuming OperationQueue
+    ```
+  Please note that `verbose` logging is quite verbose, and there is a significant difference between `verbose` and `debug`. We will be making
+  `debug` more useful as we go. (See [Issue #145](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/145))
+  
+  As always, we recommend turning off logging when deploying to production.
+- Added some verbose logging around mutation queue handling and subscription connections; minor log additions elsewhere
+- Minor dead code removal & miscellaneous cleanup
+
+## 2.10.2
+
+### Bug fixes
+
+- Fixed a bug where queries with dots (`"."`) in the arguments were not being properly cached ([Issue #110](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/110), [#165](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/165))
+- `AWSAppSyncClient.perform(mutation:queue:optimisticUpdate:conflictResolutionBlock:resultHandler:)` now properly invokes its result handler callbacks on the supplied `queue` instead of always using `DispatchQueue.main`
+
+## 2.10.1
+
+### Bug fixes
+
+- Prepopulate the queries cache with an empty `QUERY_ROOT` record, to allow optimistic updates of the cache where no queries have been previously performed. ([Issue #92](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/92), [#101](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/101))
+- Fix how "cache hits" are determined in queries, to match Apollo behavior.
+  A "cache hit" is defined as all members of the selection set having a non-nil value. For a simple query, (e.g., the `HeroNameQuery` of the StarWars API), that is an easy mental map:
+
+  **Cache hit**
+
+    ```javascript
+    {
+      "QUERY_ROOT": { "hero": "#hero" },
+      "#hero": { "hero": {"name": "R2-D2", "__typename": "Droid"} }
+    }
+    ```
+
+  **Cache misses**
+    ```javascript
+    {}
+
+    { "QUERY_ROOT": null }
+
+
+    { "QUERY_ROOT": {} }
+
+    {
+      "QUERY_ROOT": { "hero": "#hero" },
+      "#hero": { "hero": null }
+    }
+
+    // Misses because type data is incomplete
+    {
+      "QUERY_ROOT": { "hero": "#hero" },
+      "#hero": { "hero": {"name": "R2-D2"} }
+    }
+    ```
+
+  For more complex queries (like the `TwoHeroesQuery`), only all values being non-nil will result in a cache hit:
+  **Cache Hit**
+    ```javascript
+    {
+      "QUERY_ROOT": {
+        "hero": "#hero",
+        "hero(episode:EMPIRE)": "#hero(episode:EMPIRE)"
+      },
+      "#hero": {"name": "R2-D2", "__typename": "Droid"},
+      "#hero(episode:EMPIRE)": {"name": "Luke Skywalker", "__typename": "Human"}
+    }
+    ```
+
+  **Cache Misses**
+    ```javascript
+    {}
+
+    { "QUERY_ROOT": null }
+
+
+    { "QUERY_ROOT": {} }
+
+    {
+      "QUERY_ROOT": { "hero": "#hero" },
+      "#hero": { "hero": null }
+    }
+
+    {
+      "QUERY_ROOT": {
+        "hero": "#hero"
+      },
+      "#hero": {"name": "R2-D2", "__typename": "Droid"}
+    }
+    ```
+
+  These definitions match the existing Apollo behavior, as verified in additional tests against the
+  unmodified Apollo codebase.
+
+
+### Misc. Updates
+
+- Updated CloudFormation template to include S3 buckets and associated configuration to support complex object integration tests, and added integration tests for S3 uploads and downloads.
+
+## 2.10.0
+
+### Bug fixes
+
+* Merged Apollo iOS [PR #427](https://github.com/apollographql/apollo-ios/pull/427) to fix incompatibility with EnumeratedIterator in latest Xcode 10.2 beta.
+* Fixed an issue where performing a mutation with no parameters would crash clients using a backing database. [Issue #33](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/33)
+* Reduced database contention to fix crash resuming from background (See [Issue #160](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/160)). Thanks @larryonoff for contributing to this fix! 🎉
+
+### Misc. Updates
+
+**AWSAppSyncCacheConfiguration**
+
+AppSync persistent caches for queries (used by the Apollo store), mutations,
+and subscription metadata are now stored in separate files. A new
+`AWSAppSyncCacheConfiguration` API has been added that allows clients to
+specify persistent caches for all, some, or none of these caches:
+
+```swift
+// Specify persistent caches that live in the app's Cache directory
+let cacheConfiguration = try AWSAppSyncCacheConfiguration()
+
+// ... or specify persistent caches that live in `rootDirectory`
+let cacheConfiguration = try AWSAppSyncCacheConfiguration(withRootDirectory: rootDirectory)
+
+// ... or specify a database path for the query cache and the subscriptionMetadata cache, but an in-memory cache for mutation queue
+let cacheConfiguration = AWSAppSyncCacheConfiguration(offlineMutations: nil,
+                                                      queries: queriesDatabasePath,
+                                                      subscriptionMetadataCache: subscriptionMetadataDatabasePath)
+
+// ... or specify all caches to be in-memory
+let cacheConfiguration = AWSAppSyncCacheConfiguration.inMemory
+
+// ... then use the cache config in the AWSAppSyncClientConfiguration constructor
+let appSyncConfig = try AWSAppSyncClientConfiguration(appSyncServiceConfig: serviceConfig, cacheConfiguration: cacheConfiguration)
+let appSyncClient = AWSAppSyncClient(appSyncConfig: appSyncConfig)
+
+// Alternately, specify all in-memory caches by passing no `cacheConfiguration`
+let appSyncConfig = try AWSAppSyncClientConfiguration(appSyncServiceConfig: serviceConfig)
+let appSyncClient = AWSAppSyncClient(appSyncConfig: appSyncConfig)
+```
+
+**Migration**
+
+Clients can migrate to the new AWSAppSyncCacheConfiguration with a utility
+method that performs a one-time move of data from the previous databaseURL to
+the new cache configuration directory:
+
+```swift
+// Specify persistent caches that live in the app's Cache directory
+let cacheConfiguration = try AWSAppSyncCacheConfiguration()
+
+let databaseURL = // whatever your old databaseURL was
+
+// Upon successful completion, this method sets a flag in UserDefaults, making it safe
+// to call at startup for as long as this method exists.
+AWSAppSyncCacheConfigurationMigration.migrate(from: databaseURL, to: cacheConfiguration)
+```
+
+* **Breaking API Changes**
+  - `AWSSQLLiteNormalizedCacheError` has been renamed to
+    `AWSAppSyncQueriesCacheError`. Error conditions during manipulations of the
+    Apollo store will now throw this type.
+
+* **Deprecations**
+  - `AWSSQLLiteNormalizedCache` is deprecated and will be removed in an
+    upcoming minor version of AWSAppSync, as that implementation is an internal
+    detail. Clients that wish to do cleanup of database files can use
+    `AWSAppSyncCacheConfiguration` to get the path of the appropriate database
+    file.
+  - The `databaseURL` option to `AWSAppSyncClientConfiguration` is deprecated.
+    Please use the `cacheConfiguration` option (See above)
+  - The `MutationCache` protocol is deprecated because it is unused.
+
 ## 2.9.2
 
 ### New Features
 
-* Added an `AWSAppSyncClient.clearCache()` method to clear the local Apollo cache. (#36, PR #141) Thanks @larryonoff! 🎉
+* Added an `AWSAppSyncClient.clearCache()` method to clear the local Apollo cache. See [Issue #36](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/issues/36), [PR #141](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/pull/141) Thanks @larryonoff! 🎉
+
+### Bug fixes
+
+* AppSyncClient.sync() now properly invokes its subscription callbacks on the supplied `handlerQueue` instead of always using `DispatchQueue.main`
 
 ### Misc. Updates
 
 * AWSAppSync now uses Xcode 10.1 to build its Carthage binaries. This will make the binaries compatible with **Swift 4.2.1**. Projects that have not yet upgraded to use Swift 4.2.1 will fall back to building from source.
+* The AWSAppSync target no longer specifies values for `VALID_ARCH` in its build settings but instead uses defaults. [See PR#156](https://github.com/awslabs/aws-mobile-appsync-sdk-ios/pull/156) Thanks @larryonoff! 🎉
 
 ## 2.9.1
 
