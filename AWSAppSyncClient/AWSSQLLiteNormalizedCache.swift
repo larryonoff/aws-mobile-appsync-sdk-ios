@@ -44,6 +44,7 @@ public final class AWSMutationCache {
     private let s3LocalUri = Expression<String?>("s3LocalUri")
     private let s3MimeType = Expression<String?>("s3MimeType")
     private let operationString = Expression<String>("operationString")
+    private let priority = Expression<Int?>("priority")
 
     public init(fileURL: URL) throws {
         db = try Connection(.uri(fileURL.absoluteString), readonly: false)
@@ -67,6 +68,10 @@ public final class AWSMutationCache {
             table.column(operationString)
         })
 
+        do {
+            try db.run(mutationRecords.addColumn(priority))
+        } catch {}
+
         try db.run(mutationRecords.createIndex(recordIdentifier, unique: true, ifNotExists: true))
     }
     
@@ -76,6 +81,7 @@ public final class AWSMutationCache {
                 recordIdentifier <- record.recordIdentitifer,
                 data <- record.data!,
                 contentMap <- record.contentMap!.description,
+                priority <- record.priority?.rawValue,
                 recordState <- record.recordState.rawValue,
                 timestamp <- record.timestamp,
                 s3Bucket <- s3Object.bucket,
@@ -90,6 +96,7 @@ public final class AWSMutationCache {
                 recordIdentifier <- record.recordIdentitifer,
                 data <- record.data!,
                 contentMap <- record.contentMap!.description,
+                priority <- record.priority?.rawValue,
                 recordState <- record.recordState.rawValue,
                 timestamp <- record.timestamp,
                 operationString <- record.operationString!)
@@ -122,6 +129,8 @@ public final class AWSMutationCache {
                     recordIdentifier: try record.get(recordIdentifier),
                     timestamp: try record.get(timestamp))
                 mutationRecord.data = try record.get(data)
+                mutationRecord.priority = try record.get(priority)
+                    .flatMap { AWSMutationPriority(rawValue: $0) }
                 mutationRecord.recordState = .inQueue
                 mutationRecord.operationString = try record.get(operationString)
 
